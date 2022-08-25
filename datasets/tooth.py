@@ -49,6 +49,8 @@ class Tooth(BaseDataset):
 
         self.class_weights = torch.FloatTensor([1.0, 1.0]).cuda()
 
+        self._set_group_flag()
+
     def convert_label(self, label):
         label[label == 0] = self.ignore_label
         label[label < self.ignore_label] = 0
@@ -75,13 +77,14 @@ class Tooth(BaseDataset):
         return image.copy(), label.copy(), edge.copy(), np.array(img_size), img_name
 
     def gen_sample(self, image, label, multi_scale=True, is_flip=True, edge_pad=True, edge_size=4, city=True):
-        # if multi_scale:
-        #     rand_scale = 0.5 + random.randint(0, self.scale_factor) / 10.0
-        #     image, label, edge = self.multi_scale_aug(image, label, edge=None, rand_scale=rand_scale)
 
         edge = cv2.Canny(label, 0.1, 0.2)
         kernel = np.ones((edge_size, edge_size), np.uint8)
         edge = (cv2.dilate(edge, kernel, iterations=1) > 50) * 1.0
+
+        # if multi_scale:
+        #     rand_scale = 0.5 + random.randint(0, self.scale_factor) / 10.0
+        #     image, label, edge = self.multi_scale_aug(image, label, edge, rand_scale=rand_scale, rand_crop=False)
 
         h, w, _ = image.shape
         to_size = h if h > w else w
@@ -104,6 +107,7 @@ class Tooth(BaseDataset):
             flip = np.random.choice(2) * 2 - 1
             image = image[:, :, ::flip]
             label = label[:, ::flip]
+            edge = edge[:, ::flip]
 
         return image, label, edge
 
@@ -118,5 +122,15 @@ class Tooth(BaseDataset):
             save_img = Image.fromarray(pred)
             save_img.save(os.path.join(sv_path, name[i] + '.png'))
 
+    def _set_group_flag(self):
+        """Set flag according to image aspect ratio.
 
-
+        Images with aspect ratio greater than 1 will be set as group 1,
+        otherwise group 0.
+        """
+        self.flag = np.zeros(len(self), dtype=np.uint8)
+        for i in range(len(self)):
+            i += 1
+            img_info = self.files[i]
+            if img_info['width'] / img_info['height'] > 1:
+                self.flag[i-1] = 1

@@ -39,6 +39,11 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
         labels = labels.long().cuda()
         bd_gts = bd_gts.float().cuda()
 
+        if config.TRAIN.MULTI_SCALE:
+            print(images.size())
+
+        exit(0)
+
         losses, _, acc, loss_list = model(images, labels, bd_gts)
         loss = losses.mean()
         acc  = acc.mean()

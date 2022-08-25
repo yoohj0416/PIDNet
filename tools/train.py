@@ -17,6 +17,8 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 from tensorboardX import SummaryWriter
 
+from mmdet.datasets.samplers import InfiniteBatchSampler, InfiniteGroupBatchSampler
+
 import _init_paths
 import models
 import datasets
@@ -93,8 +95,6 @@ def main():
                         crop_size=crop_size,
                         scale_factor=config.TRAIN.SCALE_FACTOR)
 
-    data = train_dataset[0]
-
     trainloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -103,6 +103,17 @@ def main():
         pin_memory=False,
         drop_last=True)
 
+    # # train_batch_sampler = InfiniteBatchSampler(
+    # train_batch_sampler = InfiniteGroupBatchSampler(
+    #     train_dataset, batch_size, 1, 0
+    # )
+    #
+    # trainloader = torch.utils.data.DataLoader(
+    #     train_dataset,
+    #     batch_sampler=train_batch_sampler,
+    #     num_workers=config.WORKERS,
+    #     pin_memory=False,
+    # )
 
     test_size = (config.TEST.IMAGE_SIZE[1], config.TEST.IMAGE_SIZE[0])
     test_dataset = eval('datasets.'+config.DATASET.DATASET)(
