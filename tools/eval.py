@@ -108,12 +108,12 @@ def main():
              model,
              sv_dir=final_output_dir)
 
-    elif ('test' in config.DATASET.TEST_SET) and ('tooth' in config.DATASET.DATASET):
-        test(config,
-             test_dataset,
-             testloader,
-             model,
-             sv_dir=final_output_dir)
+    # elif ('test' in config.DATASET.TEST_SET) and ('tooth' in config.DATASET.DATASET):
+    #     test(config,
+    #          test_dataset,
+    #          testloader,
+    #          model,
+    #          sv_dir=final_output_dir)
 
     else:
         mean_IoU, IoU_array, pixel_acc, mean_acc = testval(config,

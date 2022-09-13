@@ -39,11 +39,6 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
         labels = labels.long().cuda()
         bd_gts = bd_gts.float().cuda()
 
-        if config.TRAIN.MULTI_SCALE:
-            print(images.size())
-
-        exit(0)
-
         losses, _, acc, loss_list = model(images, labels, bd_gts)
         loss = losses.mean()
         acc  = acc.mean()
@@ -136,6 +131,7 @@ def testval(config, test_dataset, testloader, model,
             sv_dir='./', sv_pred=False):
     model.eval()
     confusion_matrix = np.zeros((config.DATASET.NUM_CLASSES, config.DATASET.NUM_CLASSES))
+    IoUs = []
     with torch.no_grad():
         for index, batch in enumerate(tqdm(testloader)):
             image, label, _, _, name = batch
@@ -154,6 +150,17 @@ def testval(config, test_dataset, testloader, model,
                 size,
                 config.DATASET.NUM_CLASSES,
                 config.TRAIN.IGNORE_LABEL)
+            pos = confusion_matrix.sum(1)
+            res = confusion_matrix.sum(0)
+            tp = np.diag(confusion_matrix)
+            # IoU = (tp / np.maximum(1.0, pos + res - tp)).mean()
+            IoU = (tp / np.maximum(1.0, pos + res - tp))
+            acc = tp.sum()/pos.sum()
+            IoUs.append(IoU)
+            # print(f"Image {name}'s mean IoU: {IoU:.4f}")
+            print(f"Image {name}'s IoU: {IoU}")
+            print(f"Image {name}'s mean IoU: {IoU.mean():.4f}")
+            print(f"Image {name}'s accuracy: {acc:.4f}")
 
             if sv_pred:
                 sv_path = os.path.join(sv_dir, 'val_results')

@@ -52,5 +52,5 @@ TEST:
   BATCH_SIZE_PER_GPU: 6
   FLIP_TEST: false
   MULTI_SCALE: false
-  MODEL_FILE: './output/tooth/pidnet_small_tooth/checkpoint.pth.tar'
+  MODEL_FILE: './output/tooth/pidnet_small_tooth/best.pt'
   OUTPUT_INDEX: 1
