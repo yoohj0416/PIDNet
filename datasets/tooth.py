@@ -66,7 +66,8 @@ class Tooth(BaseDataset):
         image = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
         img_size = (item['height'], item['width'])
 
-        anns = self.instances.loadAnns(self.instances.getAnnIds(img_id, 1))
+        anns = self.instances.loadAnns(self.instances.getAnnIds(img_id, 3))
+        # anns = self.instances.loadAnns(self.instances.getAnnIds(img_id, 1))
         label = np.zeros(img_size, dtype=np.uint8)
         for ann in anns:
             label += self.instances.annToMask(ann)

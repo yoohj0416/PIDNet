@@ -45,6 +45,10 @@ class FullModel(nn.Module):
             outputs[i] = F.interpolate(outputs[i], size=(
                 h, w), mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS)
 
+    # print(f"output 0: {torch.sum(outputs[0])}")
+    # print(f"output 1: {torch.sum(outputs[1])}")
+    # print(f"output 2: {torch.sum(outputs[2])}")
+    # exit(0)
     acc  = self.pixel_acc(outputs[-2], labels)
     loss_s = self.sem_loss(outputs[:-1], labels)
     loss_b = self.bd_loss(outputs[-1], bd_gt)

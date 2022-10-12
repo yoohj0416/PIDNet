@@ -34,7 +34,8 @@ def train(config, epoch, num_epoch, epoch_iters, base_lr,
     global_steps = writer_dict['train_global_steps']
 
     for i_iter, batch in enumerate(trainloader, 0):
-        images, labels, bd_gts, _, _ = batch
+        # images, labels, bd_gts, _, _ = batch
+        images, labels, bd_gts, _, img_names = batch
         images = images.cuda()
         labels = labels.long().cuda()
         bd_gts = bd_gts.float().cuda()

@@ -1,0 +1,56 @@
+CUDNN:
+  BENCHMARK: true
+  DETERMINISTIC: false
+  ENABLED: true
+GPUS: (0,)
+OUTPUT_DIR: 'output'
+LOG_DIR: 'log'
+WORKERS: 6
+PRINT_FREQ: 10
+
+DATASET:
+  DATASET: tooth
+  ROOT: '/nfs/DataArchive/tooth_segmentation/demo_1cls'
+  TEST_SET: 'test/annotations/instances_default.json'
+  TRAIN_SET: 'train/annotations/instances_default.json'
+  NUM_CLASSES: 2
+MODEL:
+  NAME: pidnet_large
+  NUM_OUTPUTS: 2
+  PRETRAINED: "pretrained_models/imagenet/PIDNet_L_ImageNet.pth.tar"
+LOSS:
+  USE_OHEM: true
+  OHEMTHRES: 0.9
+  OHEMKEEP: 131072
+  BALANCE_WEIGHTS: [0.4, 1.0]
+  SB_WEIGHTS: 1.0
+TRAIN:
+  IMAGE_SIZE:
+  - 384
+  - 384
+  BASE_SIZE: 384
+  BATCH_SIZE_PER_GPU: 6
+  SHUFFLE: true
+  BEGIN_EPOCH: 0
+  END_EPOCH: 50
+#  END_EPOCH: 484
+  RESUME: false
+  OPTIMIZER: sgd
+  LR: 0.001
+  WD: 0.0005
+  MOMENTUM: 0.9
+  NESTEROV: false
+  FLIP: true
+  MULTI_SCALE: false
+  IGNORE_LABEL: 255
+  SCALE_FACTOR: 16
+TEST:
+  IMAGE_SIZE:
+  - 384
+  - 384
+  BASE_SIZE: 384
+  BATCH_SIZE_PER_GPU: 6
+  FLIP_TEST: false
+  MULTI_SCALE: false
+  MODEL_FILE: './output/tooth/pidnet_large_tooth/best.pt'
+  OUTPUT_INDEX: 1

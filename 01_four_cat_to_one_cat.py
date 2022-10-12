@@ -4,9 +4,14 @@ import json
 
 def main():
     # json_path = Path("/nfs/DataArchive/tooth_segmentation/demo/train/annotations/instances_default.json")
-    json_path = Path("/nfs/DataArchive/tooth_segmentation/demo/test/annotations/instances_default.json")
+    # json_path = Path("/nfs/DataArchive/tooth_segmentation/demo/test/annotations/instances_default.json")
+    # json_path = Path("/nfs/DataArchive/tooth_segmentation/released/2022-10-04_released/train/annotations/instances_default.json")
+    # json_path = Path("/nfs/DataArchive/tooth_segmentation/released/2022-10-04_released/test/annotations/instances_default.json")
+    # json_path = Path("/nfs/DataArchive/tooth_segmentation/released/2022-10-04_released_test/train/annotations/instances_default.json")
+    json_path = Path("/nfs/DataArchive/tooth_segmentation/released/2022-10-04_released_test/test/annotations/instances_default.json")
     save_path = json_path.parent.joinpath("instances_default_1cls.json")
-    remain_cat_name = 'tooth'
+    # remain_cat_name = 'tooth'
+    remain_cat_name = 'target'
 
     with open(json_path, 'r') as json_file:
         instances = json.load(json_file)
