@@ -136,8 +136,7 @@ class BaseDataset(data.Dataset):
 
         if config.MODEL.NUM_OUTPUTS > 1:
             pred = pred[config.TEST.OUTPUT_INDEX]
-        
-        
+
         pred = F.interpolate(
             input=pred, size=size[-2:],
             mode='bilinear', align_corners=config.MODEL.ALIGN_CORNERS

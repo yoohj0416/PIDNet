@@ -28,9 +28,11 @@ def reset_id_img_anns(images, anns):
 
 
 def main():
-    ori_dir = Path('/nfs/DataArchive/tooth_segmentation/released/2022-10-04')
+    # ori_dir = Path('/nfs/DataArchive/tooth_segmentation/released/2022-10-04')
+    ori_dir = Path('/nfs/DataArchive/tooth_segmentation/released/2022-10-14')
+    # save_dir = Path('/nfs/DataArchive/tooth_segmentation/released/2022-10-04_released')
+    save_dir = Path('/nfs/DataArchive/tooth_segmentation/released/2022-10-14_released')
     ori_ann_path = ori_dir.joinpath('annotations', 'instances_default.json')
-    save_dir = Path('/nfs/DataArchive/tooth_segmentation/released/2022-10-04_released')
 
     with open(ori_ann_path, 'r') as ori_ann_json:
         ori_ann = json.load(ori_ann_json)

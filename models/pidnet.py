@@ -19,7 +19,7 @@ class PIDNet(nn.Module):
     def __init__(self, m=2, n=3, num_classes=19, planes=64, ppm_planes=96, head_planes=128, augment=True):
         super(PIDNet, self).__init__()
         self.augment = augment
-        
+
         # I Branch
         self.conv1 =  nn.Sequential(
                           nn.Conv2d(3,planes,kernel_size=3, stride=2, padding=1),
@@ -149,11 +149,9 @@ class PIDNet(nn.Module):
         x_d = x_d + F.interpolate(
                         self.diff3(x),
                         size=[height_output, width_output],
-                        # mode='bilinear', align_corners=algc)
-                        mode='bilinear', align_corners=False)
-        # if self.augment:
-        #     temp_p = x_
-        temp_p = x_
+                        mode='bilinear', align_corners=algc)
+        if self.augment:
+            temp_p = x_
         
         x = self.relu(self.layer4(x))
         x_ = self.layer4_(self.relu(x_))
@@ -163,31 +161,26 @@ class PIDNet(nn.Module):
         x_d = x_d + F.interpolate(
                         self.diff4(x),
                         size=[height_output, width_output],
-                        # mode='bilinear', align_corners=algc)
-                        mode='bilinear', align_corners=False)
-        # if self.augment:
-        #     temp_d = x_d
-        temp_d = x_d
+                        mode='bilinear', align_corners=algc)
+        if self.augment:
+            temp_d = x_d
 
         x_ = self.layer5_(self.relu(x_))
         x_d = self.layer5_d(self.relu(x_d))
         x = F.interpolate(
                         self.spp(self.layer5(x)),
                         size=[height_output, width_output],
-                        # mode='bilinear', align_corners=algc)
-                        mode='bilinear', align_corners=False)
+                        mode='bilinear', align_corners=algc)
 
         x_ = self.final_layer(self.dfm(x_, x, x_d))
 
-        # if self.augment:
-        #     x_extra_p = self.seghead_p(temp_p)
-        #     x_extra_d = self.seghead_d(temp_d)
-        #     return [x_extra_p, x_, x_extra_d]
-        # else:
-        #     return x_
-        x_extra_p = self.seghead_p(temp_p)
-        x_extra_d = self.seghead_d(temp_d)
-        return [x_extra_p, x_, x_extra_d]
+        if self.augment:
+            x_extra_p = self.seghead_p(temp_p)
+            x_extra_d = self.seghead_d(temp_d)
+            return [x_extra_p, x_, x_extra_d]
+        else:
+            return x_
+
 
 def get_seg_model(cfg, imgnet_pretrained):
     

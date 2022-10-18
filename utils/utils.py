@@ -35,7 +35,7 @@ class FullModel(nn.Module):
     return acc
 
   def forward(self, inputs, labels, bd_gt, *args, **kwargs):
-    
+
     outputs = self.model(inputs, *args, **kwargs)
 
     h, w = labels.size(1), labels.size(2)

@@ -250,23 +250,14 @@ class PAPPM(nn.Module):
         scale_list = []
 
         x_ = self.scale0(x)
-        # scale_list.append(F.interpolate(self.scale1(x), size=[height, width],
-        #                 mode='bilinear', align_corners=algc)+x_)
-        # scale_list.append(F.interpolate(self.scale2(x), size=[height, width],
-        #                 mode='bilinear', align_corners=algc)+x_)
-        # scale_list.append(F.interpolate(self.scale3(x), size=[height, width],
-        #                 mode='bilinear', align_corners=algc)+x_)
-        # scale_list.append(F.interpolate(self.scale4(x), size=[height, width],
-        #                 mode='bilinear', align_corners=algc)+x_)
-
         scale_list.append(F.interpolate(self.scale1(x), size=[height, width],
-                        mode='bilinear', align_corners=False)+x_)
+                        mode='bilinear', align_corners=algc)+x_)
         scale_list.append(F.interpolate(self.scale2(x), size=[height, width],
-                        mode='bilinear', align_corners=False)+x_)
+                        mode='bilinear', align_corners=algc)+x_)
         scale_list.append(F.interpolate(self.scale3(x), size=[height, width],
-                        mode='bilinear', align_corners=False)+x_)
+                        mode='bilinear', align_corners=algc)+x_)
         scale_list.append(F.interpolate(self.scale4(x), size=[height, width],
-                        mode='bilinear', align_corners=False)+x_)
+                        mode='bilinear', align_corners=algc)+x_)
         
         scale_out = self.scale_process(torch.cat(scale_list, 1))
        
@@ -300,20 +291,19 @@ class PagFM(nn.Module):
 
     def forward(self, x, y):
         input_size = x.size()
-        # if self.after_relu:
-        #     y = self.relu(y)
-        #     x = self.relu(x)
+        if self.after_relu:
+            y = self.relu(y)
+            x = self.relu(x)
         
         y_q = self.f_y(y)
         y_q = F.interpolate(y_q, size=[input_size[2], input_size[3]],
                             mode='bilinear', align_corners=False)
         x_k = self.f_x(x)
         
-        # if self.with_channel:
-        #     sim_map = torch.sigmoid(self.up(x_k * y_q))
-        # else:
-        #     sim_map = torch.sigmoid(torch.sum(x_k * y_q, dim=1).unsqueeze(1))
-        sim_map = torch.sigmoid(torch.sum(x_k * y_q, dim=1).unsqueeze(1))
+        if self.with_channel:
+            sim_map = torch.sigmoid(self.up(x_k * y_q))
+        else:
+            sim_map = torch.sigmoid(torch.sum(x_k * y_q, dim=1).unsqueeze(1))
 
         y = F.interpolate(y, size=[input_size[2], input_size[3]],
                             mode='bilinear', align_corners=False)
