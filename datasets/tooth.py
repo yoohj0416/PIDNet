@@ -135,3 +135,46 @@ class Tooth(BaseDataset):
             img_info = self.files[i]
             if img_info['width'] / img_info['height'] > 1:
                 self.flag[i-1] = 1
+
+
+class ToothDemo(Tooth):
+    def __init__(self,
+                 root,
+                 num_classes=1,
+                 multi_scale=False,
+                 flip=True,
+                 ignore_label=255,
+                 base_size=384,
+                 crop_size=(0, 0),
+                 scale_factor=None,
+                 mean=[0.485, 0.456, 0.406],
+                 std=[0.229, 0.224, 0.225],
+                 bd_dilate_size=4):
+
+        self.root = Path(root)
+        self.files = list(self.root.iterdir())
+        self.num_classes = num_classes
+
+        self.multi_scale = multi_scale
+        self.flip = flip
+
+        self.mean = mean
+        self.std = std
+        self.ignore_label = ignore_label
+
+        # self._set_group_flag()
+
+    def __getitem__(self, index):
+        img_path = self.files[index]
+        image = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+        img_size = (image.shape[0], image.shape[1])
+        image = self.gen_sample(image)
+        return image, np.array(img_size), np.array(img_size), np.array(img_size), img_path.name
+
+    def gen_sample(self, image, city=True):
+        h, w, _ = image.shape
+        to_size = h if h > w else w
+        image = self.pad_image(image, h, w, (to_size, to_size), 0)
+        image = self.input_transform(image)
+        image = image.transpose((2, 0, 1))
+        return image
