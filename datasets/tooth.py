@@ -28,7 +28,9 @@ class Tooth(BaseDataset):
                  crop_size=(0, 0),
                  scale_factor=None,
                  mean=[0.485, 0.456, 0.406],
+                 # mean=[0.261, 0.326, 0.624],
                  std=[0.229, 0.224, 0.225],
+                 # std=[0.126, 0.155, 0.106],
                  bd_dilate_size=4):
 
         super(Tooth, self).__init__(ignore_label, base_size,
@@ -93,6 +95,10 @@ class Tooth(BaseDataset):
         label = self.pad_image(label, h, w, (to_size, to_size), 0)
         edge = self.pad_image(edge, h, w, (to_size, to_size), 0)
 
+        image = cv2.resize(image, (self.base_size, self.base_size), interpolation=cv2.INTER_AREA)
+        label = cv2.resize(label, (self.base_size, self.base_size), interpolation=cv2.INTER_AREA)
+        edge = cv2.resize(edge, (self.base_size, self.base_size), interpolation=cv2.INTER_AREA)
+
         # cv2.imshow('image', image)
         # cv2.imshow('label', label)
         # cv2.imshow('edge', edge)
@@ -135,6 +141,45 @@ class Tooth(BaseDataset):
             img_info = self.files[i]
             if img_info['width'] / img_info['height'] > 1:
                 self.flag[i-1] = 1
+
+    def calc_mean_std(self):
+
+        item = self.instances.loadImgs(1)[0]
+        img_name = item["file_name"]
+        img_path = self.json_path.parents[1].joinpath('images', img_name)
+        image = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+        h, w, _ = image.shape
+
+        psum = np.array([0.0, 0.0, 0.0])
+        psum_sq = np.array([0.0, 0.0, 0.0])
+
+        for index in range(len(self)):
+            index += 1
+            item = self.instances.loadImgs(index)[0]
+            img_name = item["file_name"]
+            img_path = self.json_path.parents[1].joinpath('images', img_name)
+            image = cv2.imread(str(img_path), cv2.IMREAD_COLOR)
+
+            h, w, _ = image.shape
+            to_size = h if h > w else w
+            image = self.pad_image(image, h, w, (to_size, to_size), 0)
+
+            image = image.astype(np.float32)
+            image = image / 255.0
+            image = np.transpose(image, (2, 0, 1))
+
+            for i in range(3):
+                psum[i] += image[i].sum()
+                psum_sq[i] += (image[i] ** 2).sum()
+
+        cnt = len(self) * h * w
+
+        total_mean = psum / cnt
+        total_var = (psum_sq / cnt) - (total_mean ** 2)
+        total_std = np.sqrt(total_var)
+
+        print(f"mean: {total_mean}")
+        print(f"std: {total_std}")
 
 
 class ToothDemo(Tooth):

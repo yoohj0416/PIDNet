@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time
-from .model_utils_for_script import BasicBlock, Bottleneck, segmenthead, DAPPM, PAPPM, PagFM, Bag, Light_Bag
+from .model_utils_for_script import BasicBlock, Bottleneck, segmenthead, DAPPM, PAPPM, PagFM, Bag, Light_Bag, SPAPPM
 import logging
 
 BatchNorm2d = nn.BatchNorm2d
@@ -54,7 +54,8 @@ class PIDNet(nn.Module):
         self.layer5_ = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
 
         # D Branch
-        if m == 2:
+        # if m == 2:
+        if m <= 2:
             self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes)
             self.layer4_d = self._make_layer(Bottleneck, planes, planes, 1)
             self.diff3 = nn.Sequential(
@@ -176,16 +177,435 @@ class PIDNet(nn.Module):
         return [x_extra_p, x_, x_extra_d]
 
 
+class PIDNet_SPAPPM_woPag(PIDNet):
+
+    def __init__(self, m=2, n=3, num_classes=19, planes=64, ppm_planes=96, head_planes=128, augment=True):
+        super(PIDNet_SPAPPM_woPag, self).__init__()
+        self.augment = augment
+
+        # I Branch
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(planes, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+        self.layer1 = self._make_layer(BasicBlock, planes, planes, m)
+        self.layer2 = self._make_layer(BasicBlock, planes, planes * 2, m, stride=2)
+        self.layer3 = self._make_layer(BasicBlock, planes * 2, planes * 4, n, stride=2)
+        self.layer4 = self._make_layer(BasicBlock, planes * 4, planes * 8, n, stride=2)
+        self.layer5 = self._make_layer(Bottleneck, planes * 8, planes * 8, 2, stride=2)
+
+        # P Branch
+        self.compression3 = nn.Sequential(
+            nn.Conv2d(planes * 4, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+
+        self.compression4 = nn.Sequential(
+            nn.Conv2d(planes * 8, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+
+        self.diff3_ = nn.Sequential(
+            nn.Conv2d(planes * 4, planes * 2, kernel_size=3, padding=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom)
+        )
+        self.diff4_ = nn.Sequential(
+            nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom)
+        )
+        self.layer3_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer4_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer5_ = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # D Branch
+        if m == 2:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes)
+            self.layer4_d = self._make_layer(Bottleneck, planes, planes, 1)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = SPAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Light_Bag(planes * 4, planes * 4)
+        else:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.layer4_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = DAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Bag(planes * 4, planes * 4)
+
+        self.layer5_d = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # Prediction Head
+        if self.augment:
+            self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
+            self.seghead_d = segmenthead(planes * 2, planes, 1)
+
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+
+        input_size = (x.shape[-1], x.shape[-2])
+
+        width_output = x.shape[-1] // 8
+        height_output = x.shape[-2] // 8
+
+        x = self.conv1(x)
+        x = self.layer1(x)
+        x = self.relu(self.layer2(self.relu(x)))
+        x_ = self.layer3_(x)
+        x_d = self.layer3_d(x)
+
+        x = self.relu(self.layer3(x))
+
+        x_ = x_ + F.interpolate(
+            self.diff3_(x),
+            size=[height_output, width_output],
+            mode='bilinear', align_corners=False)
+        # x_ = self.pag3(x_, self.compression3(x))
+        x_d = x_d + F.interpolate(
+            self.diff3(x),
+            size=[height_output, width_output],
+            mode='bilinear', align_corners=False)
+        temp_p = x_
+
+        x = self.relu(self.layer4(x))
+        x_ = self.layer4_(self.relu(x_))
+        x_d = self.layer4_d(self.relu(x_d))
+
+        x_ = x_ + F.interpolate(
+            self.diff4_(x),
+            size=[height_output, width_output],
+            mode='bilinear', align_corners=False)
+        # x_ = self.pag4(x_, self.compression4(x))
+        x_d = x_d + F.interpolate(
+            self.diff4(x),
+            size=[height_output, width_output],
+            mode='bilinear', align_corners=False)
+        temp_d = x_d
+
+        x_ = self.layer5_(self.relu(x_))
+        x_d = self.layer5_d(self.relu(x_d))
+        x = F.interpolate(
+            self.spp(self.layer5(x)),
+            size=[height_output, width_output],
+            mode='bilinear', align_corners=False)
+
+        x_ = self.final_layer(self.dfm(x_, x, x_d))
+
+        x_extra_p = self.seghead_p(temp_p)
+        x_extra_d = self.seghead_d(temp_d)
+        return [x_extra_p, x_, x_extra_d]
+
+
+class PIDNet_reduced_stage2(PIDNet):
+
+    def __init__(self, m=2, n=3, num_classes=19, planes=64, ppm_planes=96, head_planes=128, augment=True):
+        super(PIDNet_reduced_stage2, self).__init__()
+        self.augment = augment
+
+        # I Branch
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(planes, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+        self.layer1 = self._make_layer(BasicBlock, planes, planes, m)
+        self.layer2 = self._make_layer(BasicBlock, planes, planes, m, stride=2)
+        self.layer3 = self._make_layer(BasicBlock, planes, planes * 4, n, stride=2)
+        self.layer4 = self._make_layer(BasicBlock, planes * 4, planes * 8, n, stride=2)
+        self.layer5 = self._make_layer(Bottleneck, planes * 8, planes * 8, 2, stride=2)
+
+        # P Branch
+        self.compression3 = nn.Sequential(
+            nn.Conv2d(planes * 4, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+
+        self.compression4 = nn.Sequential(
+            nn.Conv2d(planes * 8, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+        self.pag3 = PagFM(planes * 2, planes)
+        self.pag4 = PagFM(planes * 2, planes)
+
+        self.layer3_ = self._make_layer(BasicBlock, planes, planes * 2, m)
+        self.layer4_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer5_ = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # D Branch
+        if m == 2:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes, planes)
+            self.layer4_d = self._make_layer(Bottleneck, planes, planes, 1)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = PAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Light_Bag(planes * 4, planes * 4)
+        else:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes, planes * 2)
+            self.layer4_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = DAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Bag(planes * 4, planes * 4)
+
+        self.layer5_d = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # Prediction Head
+        if self.augment:
+            self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
+            self.seghead_d = segmenthead(planes * 2, planes, 1)
+
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
+class PIDNet_reduced_stage3(PIDNet):
+
+    def __init__(self, m=2, n=3, num_classes=19, planes=64, ppm_planes=96, head_planes=128, augment=True):
+        super(PIDNet_reduced_stage3, self).__init__()
+        self.augment = augment
+
+        # I Branch
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(planes, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+        self.layer1 = self._make_layer(BasicBlock, planes, planes, m)
+        self.layer2 = self._make_layer(BasicBlock, planes, planes * 2, m, stride=2)
+        self.layer3 = self._make_layer(BasicBlock, planes * 2, planes * 2, n, stride=2)
+        self.layer4 = self._make_layer(BasicBlock, planes * 2, planes * 8, n, stride=2)
+        self.layer5 = self._make_layer(Bottleneck, planes * 8, planes * 8, 2, stride=2)
+
+        # P Branch
+        self.compression3 = nn.Sequential(
+            nn.Conv2d(planes * 2, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+
+        self.compression4 = nn.Sequential(
+            nn.Conv2d(planes * 8, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+        self.pag3 = PagFM(planes * 2, planes)
+        self.pag4 = PagFM(planes * 2, planes)
+
+        self.layer3_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer4_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer5_ = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # D Branch
+        if m == 2:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes)
+            self.layer4_d = self._make_layer(Bottleneck, planes, planes, 1)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 2, planes, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = PAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Light_Bag(planes * 4, planes * 4)
+        else:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.layer4_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 2, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 8, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = DAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Bag(planes * 4, planes * 4)
+
+        self.layer5_d = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # Prediction Head
+        if self.augment:
+            self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
+            self.seghead_d = segmenthead(planes * 2, planes, 1)
+
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
+class PIDNet_reduced_stage4(PIDNet):
+
+    def __init__(self, m=2, n=3, num_classes=19, planes=64, ppm_planes=96, head_planes=128, augment=True):
+        super(PIDNet_reduced_stage4, self).__init__()
+        self.augment = augment
+
+        # I Branch
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(planes, planes, kernel_size=3, stride=2, padding=1),
+            BatchNorm2d(planes, momentum=bn_mom),
+            nn.ReLU(inplace=True),
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+        self.layer1 = self._make_layer(BasicBlock, planes, planes, m)
+        self.layer2 = self._make_layer(BasicBlock, planes, planes * 2, m, stride=2)
+        self.layer3 = self._make_layer(BasicBlock, planes * 2, planes * 4, n, stride=2)
+        self.layer4 = self._make_layer(BasicBlock, planes * 4, planes * 4, n, stride=2)
+        self.layer5 = self._make_layer(Bottleneck, planes * 4, planes * 8, 2, stride=2)
+
+        # P Branch
+        self.compression3 = nn.Sequential(
+            nn.Conv2d(planes * 4, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+
+        self.compression4 = nn.Sequential(
+            nn.Conv2d(planes * 4, planes * 2, kernel_size=1, bias=False),
+            BatchNorm2d(planes * 2, momentum=bn_mom),
+        )
+        self.pag3 = PagFM(planes * 2, planes)
+        self.pag4 = PagFM(planes * 2, planes)
+
+        self.layer3_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer4_ = self._make_layer(BasicBlock, planes * 2, planes * 2, m)
+        self.layer5_ = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # D Branch
+        if m == 2:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes)
+            self.layer4_d = self._make_layer(Bottleneck, planes, planes, 1)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = PAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Light_Bag(planes * 4, planes * 4)
+        else:
+            self.layer3_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.layer4_d = self._make_single_layer(BasicBlock, planes * 2, planes * 2)
+            self.diff3 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.diff4 = nn.Sequential(
+                nn.Conv2d(planes * 4, planes * 2, kernel_size=3, padding=1, bias=False),
+                BatchNorm2d(planes * 2, momentum=bn_mom),
+            )
+            self.spp = DAPPM(planes * 16, ppm_planes, planes * 4)
+            self.dfm = Bag(planes * 4, planes * 4)
+
+        self.layer5_d = self._make_layer(Bottleneck, planes * 2, planes * 2, 1)
+
+        # Prediction Head
+        if self.augment:
+            self.seghead_p = segmenthead(planes * 2, head_planes, num_classes)
+            self.seghead_d = segmenthead(planes * 2, planes, 1)
+
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
 def get_seg_model(cfg, imgnet_pretrained):
-    if 's' in cfg.MODEL.NAME:
+    print(cfg.MODEL.NAME)
+    if 'small' in cfg.MODEL.NAME:
         model = PIDNet(m=2, n=3, num_classes=cfg.DATASET.NUM_CLASSES, planes=32, ppm_planes=96, head_planes=128,
                        augment=True)
-    elif 'm' in cfg.MODEL.NAME:
+    elif 'medium' in cfg.MODEL.NAME:
         model = PIDNet(m=2, n=3, num_classes=cfg.DATASET.NUM_CLASSES, planes=64, ppm_planes=96, head_planes=128,
                        augment=True)
-    else:
+    elif 'large' in cfg.MODEL.NAME:
         model = PIDNet(m=3, n=4, num_classes=cfg.DATASET.NUM_CLASSES, planes=64, ppm_planes=112, head_planes=256,
                        augment=True)
+    elif 'SPAPPM_woPag' in cfg.MODEL.NAME:
+        model = PIDNet_SPAPPM_woPag(m=2, n=3, num_classes=cfg.DATASET.NUM_CLASSES, planes=32, ppm_planes=96,
+                                    head_planes=128, augment=True)
+    elif 'reduced_stage2' in cfg.MODEL.NAME:
+        model = PIDNet_reduced_stage2(m=2, n=3, num_classes=cfg.DATASET.NUM_CLASSES, planes=32, ppm_planes=96,
+                                      head_planes=128, augment=True)
+    elif 'reduced_stage3' in cfg.MODEL.NAME:
+        model = PIDNet_reduced_stage3(m=2, n=3, num_classes=cfg.DATASET.NUM_CLASSES, planes=32, ppm_planes=96,
+                                      head_planes=128, augment=True)
+    elif 'reduced_stage4' in cfg.MODEL.NAME:
+        model = PIDNet_reduced_stage4(m=2, n=3, num_classes=cfg.DATASET.NUM_CLASSES, planes=32, ppm_planes=96,
+                                      head_planes=128, augment=True)
+    elif 'tiny' in cfg.MODEL.NAME:
+        model = PIDNet(m=2, n=2, num_classes=cfg.DATASET.NUM_CLASSES, planes=24, ppm_planes=64,
+                       head_planes=128, augment=True)
+    elif 'nano' in cfg.MODEL.NAME:
+        model = PIDNet(m=1, n=2, num_classes=cfg.DATASET.NUM_CLASSES, planes=24, ppm_planes=32,
+                       head_planes=128, augment=True)
 
     if imgnet_pretrained:
         pretrained_state = torch.load(cfg.MODEL.PRETRAINED, map_location='cpu')['state_dict']
