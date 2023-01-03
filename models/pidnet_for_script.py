@@ -604,7 +604,7 @@ def get_seg_model(cfg, imgnet_pretrained):
         model = PIDNet(m=2, n=2, num_classes=cfg.DATASET.NUM_CLASSES, planes=24, ppm_planes=64,
                        head_planes=128, augment=True)
     elif 'nano' in cfg.MODEL.NAME:
-        model = PIDNet(m=1, n=2, num_classes=cfg.DATASET.NUM_CLASSES, planes=24, ppm_planes=32,
+        model = PIDNet(m=2, n=2, num_classes=cfg.DATASET.NUM_CLASSES, planes=20, ppm_planes=32,
                        head_planes=128, augment=True)
 
     if imgnet_pretrained:
